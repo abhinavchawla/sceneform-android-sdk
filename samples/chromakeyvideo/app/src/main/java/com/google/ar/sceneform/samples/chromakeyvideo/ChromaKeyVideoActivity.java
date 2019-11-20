@@ -91,7 +91,6 @@ public class ChromaKeyVideoActivity extends AppCompatActivity {
             renderable -> {
               videoRenderable = renderable;
               renderable.getMaterial().setExternalTexture("videoTexture", texture);
-              renderable.getMaterial().setFloat4("keyColor", CHROMA_KEY_COLOR);
             })
         .exceptionally(
             throwable -> {

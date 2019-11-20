@@ -17,13 +17,21 @@
 package com.google.ar.sceneform.samples.augmentedimage;
 
 import android.content.Context;
+import android.graphics.SurfaceTexture;
+import android.media.MediaPlayer;
 import android.net.Uri;
-import android.util.Log;
+import android.support.annotation.Nullable;
+import android.view.Gravity;
+import android.widget.Toast;
+
 import com.google.ar.core.AugmentedImage;
 import com.google.ar.sceneform.AnchorNode;
 import com.google.ar.sceneform.Node;
 import com.google.ar.sceneform.math.Vector3;
+import com.google.ar.sceneform.rendering.Color;
+import com.google.ar.sceneform.rendering.ExternalTexture;
 import com.google.ar.sceneform.rendering.ModelRenderable;
+
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -33,99 +41,146 @@ import java.util.concurrent.CompletableFuture;
 @SuppressWarnings({"AndroidApiChecker"})
 public class AugmentedImageNode extends AnchorNode {
 
-  private static final String TAG = "AugmentedImageNode";
+    private static final String TAG = "AugmentedImageNode";
 
-  // The augmented image represented by this node.
-  private AugmentedImage image;
+    private static final float VIDEO_HEIGHT_METERS = 0.85f;
 
-  // Models of the 4 corners.  We use completable futures here to simplify
-  // the error handling and asynchronous loading.  The loading is started with the
-  // first construction of an instance, and then used when the image is set.
-  private static CompletableFuture<ModelRenderable> ulCorner;
-  private static CompletableFuture<ModelRenderable> urCorner;
-  private static CompletableFuture<ModelRenderable> lrCorner;
-  private static CompletableFuture<ModelRenderable> llCorner;
+    // The augmented image represented by this node.
+    private AugmentedImage image;
 
-  public AugmentedImageNode(Context context) {
-    // Upon construction, start loading the models for the corners of the frame.
-    if (ulCorner == null) {
-      ulCorner =
-          ModelRenderable.builder()
-              .setSource(context, Uri.parse("models/frame_upper_left.sfb"))
-              .build();
-      urCorner =
-          ModelRenderable.builder()
-              .setSource(context, Uri.parse("models/frame_upper_right.sfb"))
-              .build();
-      llCorner =
-          ModelRenderable.builder()
-              .setSource(context, Uri.parse("models/frame_lower_left.sfb"))
-              .build();
-      lrCorner =
-          ModelRenderable.builder()
-              .setSource(context, Uri.parse("models/frame_lower_right.sfb"))
-              .build();
-    }
-  }
+    // Models of the 4 corners.  We use completable futures here to simplify
+    // the error handling and asynchronous loading.  The loading is started with the
+    // first construction of an instance, and then used when the image is set.
+    private static CompletableFuture<ModelRenderable> ulCorner;
+    private static CompletableFuture<ModelRenderable> urCorner;
+    private static CompletableFuture<ModelRenderable> lrCorner;
+    private static CompletableFuture<ModelRenderable> llCorner;
+    private CompletableFuture<ModelRenderable> video;
 
-  /**
-   * Called when the AugmentedImage is detected and should be rendered. A Sceneform node tree is
-   * created based on an Anchor created from the image. The corners are then positioned based on the
-   * extents of the image. There is no need to worry about world coordinates since everything is
-   * relative to the center of the image, which is the parent node of the corners.
-   */
-  @SuppressWarnings({"AndroidApiChecker", "FutureReturnValueIgnored"})
-  public void setImage(AugmentedImage image) {
-    this.image = image;
+    @Nullable
+    private ModelRenderable videoRenderable;
+    private MediaPlayer mediaPlayer;
+    ExternalTexture texture = new ExternalTexture();
 
-    // If any of the models are not loaded, then recurse when all are loaded.
-    if (!ulCorner.isDone() || !urCorner.isDone() || !llCorner.isDone() || !lrCorner.isDone()) {
-      CompletableFuture.allOf(ulCorner, urCorner, llCorner, lrCorner)
-          .thenAccept((Void aVoid) -> setImage(image))
-          .exceptionally(
-              throwable -> {
-                Log.e(TAG, "Exception loading", throwable);
-                return null;
-              });
+    private static final Color CHROMA_KEY_COLOR = new Color(0.1843f, 1.0f, 0.098f);
+
+
+    public AugmentedImageNode(Context context, String videoURI) {
+        // Upon construction, start loading the models for the corners of the frame.
+        mediaPlayer = new MediaPlayer();
+        mediaPlayer = MediaPlayer.create(context, Uri.parse(videoURI));
+        mediaPlayer.setSurface(texture.getSurface());
+        mediaPlayer.setLooping(true);
+        ulCorner =
+                ModelRenderable.builder()
+                        .setSource(context, Uri.parse("models/frame_upper_left.sfb"))
+                        .build();
+        urCorner =
+                ModelRenderable.builder()
+                        .setSource(context, Uri.parse("models/frame_upper_right.sfb"))
+                        .build();
+        llCorner =
+                ModelRenderable.builder()
+                        .setSource(context, Uri.parse("models/frame_lower_left.sfb"))
+                        .build();
+        lrCorner =
+                ModelRenderable.builder()
+                        .setSource(context, Uri.parse("models/frame_lower_right.sfb"))
+                        .build();
+        video = ModelRenderable.builder()
+                .setSource(context, R.raw.chroma_key_video)
+                .build();
     }
 
-    // Set the anchor based on the center of the image.
-    setAnchor(image.createAnchor(image.getCenterPose()));
+    /**
+     * Called when the AugmentedImage is detected and should be rendered. A Sceneform node tree is
+     * created based on an Anchor created from the image. The corners are then positioned based on the
+     * extents of the image. There is no need to worry about world coordinates since everything is
+     * relative to the center of the image, which is the parent node of the corners.
+     */
+    @SuppressWarnings({"AndroidApiChecker", "FutureReturnValueIgnored"})
+    public void setImage(Context context, AugmentedImage image) {
+        this.image = image;
 
-    // Make the 4 corner nodes.
-    Vector3 localPosition = new Vector3();
-    Node cornerNode;
+        video.thenAccept(
+                renderable -> {
+                    videoRenderable = renderable;
+                    renderable.getMaterial().setExternalTexture("videoTexture", texture);
+                    renderable.getMaterial().setFloat4("keyColor", CHROMA_KEY_COLOR);
+                })
+                .exceptionally(
+                        throwable -> {
+                            Toast toast =
+                                    Toast.makeText(context, "Unable to load video renderable", Toast.LENGTH_LONG);
+                            toast.setGravity(Gravity.CENTER, 0, 0);
+                            toast.show();
+                            return null;
+                        });
 
-    // Upper left corner.
-    localPosition.set(-0.5f * image.getExtentX(), 0.0f, -0.5f * image.getExtentZ());
-    cornerNode = new Node();
-    cornerNode.setParent(this);
-    cornerNode.setLocalPosition(localPosition);
-    cornerNode.setRenderable(ulCorner.getNow(null));
 
-    // Upper right corner.
-    localPosition.set(0.5f * image.getExtentX(), 0.0f, -0.5f * image.getExtentZ());
-    cornerNode = new Node();
-    cornerNode.setParent(this);
-    cornerNode.setLocalPosition(localPosition);
-    cornerNode.setRenderable(urCorner.getNow(null));
+        // Set the anchor based on the center of the image.
+        setAnchor(image.createAnchor(image.getCenterPose()));
 
-    // Lower right corner.
-    localPosition.set(0.5f * image.getExtentX(), 0.0f, 0.5f * image.getExtentZ());
-    cornerNode = new Node();
-    cornerNode.setParent(this);
-    cornerNode.setLocalPosition(localPosition);
-    cornerNode.setRenderable(lrCorner.getNow(null));
+        // Make the 4 corner nodes.
+        Vector3 localPosition = new Vector3();
 
-    // Lower left corner.
-    localPosition.set(-0.5f * image.getExtentX(), 0.0f, 0.5f * image.getExtentZ());
-    cornerNode = new Node();
-    cornerNode.setParent(this);
-    cornerNode.setLocalPosition(localPosition);
-    cornerNode.setRenderable(llCorner.getNow(null));
-  }
+        Node cornerNode;
 
-  public AugmentedImage getImage() {
-    return image;
-  }
+        // Upper left corner.
+        cornerNode = new Node();
+        cornerNode.setParent(this);
+        cornerNode.setLocalPosition(localPosition);
+
+
+        // Set the scale of the node so that the aspect ratio of the video is correct.
+        float videoWidth = mediaPlayer.getVideoWidth();
+        float videoHeight = mediaPlayer.getVideoHeight();
+
+        cornerNode.setLocalScale(
+                new Vector3(
+                        image.getExtentX(), 1.0f, image.getExtentZ()));
+//      cornerNode.setLocalScale(new Vector3(0.5f, 0.5f, 1f));
+
+        // Start playing the video when the first node is placed.
+        if (!mediaPlayer.isPlaying()) {
+            mediaPlayer.start();
+
+            // Wait to set the renderable until the first frame of the  video becomes available.
+            // This prevents the renderable from briefly appearing as a black quad before the video
+            // plays.
+            texture.getSurfaceTexture()
+                    .setOnFrameAvailableListener(
+                            (SurfaceTexture surfaceTexture) -> {
+                                cornerNode.setRenderable(videoRenderable);
+                                texture.getSurfaceTexture().setOnFrameAvailableListener(null);
+                            });
+        } else {
+            cornerNode.setRenderable(videoRenderable);
+        }
+
+//    // Upper right corner.
+//    localPosition.set(0.5f * image.getExtentX(), 0.0f, -0.5f * image.getExtentZ());
+//    cornerNode = new Node();
+//    cornerNode.setParent(this);
+//    cornerNode.setLocalPosition(localPosition);
+//    cornerNode.setRenderable(urCorner.getNow(null));
+//
+//    // Lower right corner.
+//    localPosition.set(0.5f * image.getExtentX(), 0.0f, 0.5f * image.getExtentZ());
+//    cornerNode = new Node();
+//    cornerNode.setParent(this);
+//    cornerNode.setLocalPosition(localPosition);
+//    cornerNode.setRenderable(lrCorner.getNow(null));
+//
+//    // Lower left corner.
+//    localPosition.set(-0.5f * image.getExtentX(), 0.0f, 0.5f * image.getExtentZ());
+//    cornerNode = new Node();
+//    cornerNode.setParent(this);
+//    cornerNode.setLocalPosition(localPosition);
+//    cornerNode.setRenderable(llCorner.getNow(null));
+    }
+
+    public AugmentedImage getImage() {
+        return image;
+    }
 }

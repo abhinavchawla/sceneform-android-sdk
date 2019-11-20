@@ -1,5 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!--
+<?xml version="1.0" encoding="utf-8"?><!--
    Copyright 2016 Google Inc.
 
    Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,6 +14,7 @@
    limitations under the License.
 -->
 <resources>
-  <string name="app_name">Augmented Images</string>
-  <string name="fit_image_to_scan">Fit image to scan</string>
+    <string name="app_name">Augmented Images</string>
+    <string name="fit_image_to_scan">Fit image to scan</string>
+    <string name="title_activity_starter">StarterActivity</string>
 </resources>

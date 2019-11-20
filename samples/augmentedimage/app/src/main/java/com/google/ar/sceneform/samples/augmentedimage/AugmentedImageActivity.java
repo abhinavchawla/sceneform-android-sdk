@@ -77,7 +77,9 @@ public class AugmentedImageActivity extends AppCompatActivity {
 
     Collection<AugmentedImage> updatedAugmentedImages =
         frame.getUpdatedTrackables(AugmentedImage.class);
+    System.out.println(updatedAugmentedImages.size());
     for (AugmentedImage augmentedImage : updatedAugmentedImages) {
+      System.out.println(augmentedImage.getName());
       switch (augmentedImage.getTrackingState()) {
         case PAUSED:
           // When an image is in PAUSED state, but the camera is not PAUSED, it has been detected,
@@ -88,12 +90,14 @@ public class AugmentedImageActivity extends AppCompatActivity {
 
         case TRACKING:
           // Have to switch to UI Thread to update View.
-          fitToScanView.setVisibility(View.GONE);
+//          fitToScanView.setVisibility(View.GONE);
 
           // Create a new anchor for newly found images.
           if (!augmentedImageMap.containsKey(augmentedImage)) {
-            AugmentedImageNode node = new AugmentedImageNode(this);
-            node.setImage(augmentedImage);
+            System.out.println(augmentedImage.getName());
+            ImageVideoMapping.getInstance().printMap();
+            AugmentedImageNode node = new AugmentedImageNode(this, ImageVideoMapping.getInstance().getImageVideoMap().get(augmentedImage.getName()));
+            node.setImage(this, augmentedImage);
             augmentedImageMap.put(augmentedImage, node);
             arFragment.getArSceneView().getScene().addChild(node);
           }
